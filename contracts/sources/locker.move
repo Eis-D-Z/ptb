@@ -41,7 +41,10 @@ module contracts::locker{
         let MustDestroyThis {item_id} = hot_potato;
         let actual_id: address = object::id_address(&item); 
         assert!(item_id == actual_id, EWrongItemReturned);
-
+        
+        // In some cases it might make sense for the item to be sent to the address.
+        // In those particular instances it is recommended to use transfer::public_transfer
+        // to make sure the item goes to the correct address (eg: the one written in the hot potato).
         dof::add<address, T>(&mut locker.id, actual_id, item);
     }
 

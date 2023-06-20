@@ -19,7 +19,7 @@ module contracts::nft {
         text: vector<u8>
     }
 
-    // correct patter
+    // correct pattern
     public fun mint(color: String, weight: u32, ctx: &mut TxContext): NFT {
         let nft = NFT {
             id: object::new(ctx),
