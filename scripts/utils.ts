@@ -6,6 +6,9 @@ import {
   fromB64,
   RawSigner,
 } from "@mysten/sui.js";
+import * as dotenv from "dotenv";
+dotenv.config();
+
 
 const getExecStuff = () => {
   const b64PrivateKey = process.env.PK_B64 as string;
@@ -17,6 +20,7 @@ const getExecStuff = () => {
   const address = `${keypair.getPublicKey().toSuiAddress()}`;
   const provider = new JsonRpcProvider(devnetConnection);
   const signer = new RawSigner(keypair, provider);
+
 
   return { address, provider, signer };
 }
