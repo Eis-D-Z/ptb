@@ -1,6 +1,8 @@
-import { TransactionBlock, RawSigner } from "@mysten/sui.js";
-import getExecStuff from "./utils";
+import { TransactionBlock } from "@mysten/sui.js/transactions";
+import { getClient, getSponsorData } from "./utils";
 import * as dotenv from "dotenv";
+import { SuiClient } from "@mysten/sui.js/dist/cjs/client";
+import { Ed25519Keypair } from "@mysten/sui.js/dist/cjs/keypairs/ed25519";
 dotenv.config();
 
 const pkgId = process.env.NFT_PKG as string;
@@ -9,7 +11,8 @@ const mint = async (
   color: string,
   weight: number,
   address: string,
-  signer: RawSigner
+  keypair: Ed25519Keypair,
+  client: SuiClient
 ) => {
   const tx = new TransactionBlock();
 
@@ -25,46 +28,53 @@ const mint = async (
 
   tx.transferObjects([nft], tx.pure(address));
 
-  const response = await signer.signAndExecuteTransactionBlock({
+  const response = await client.signAndExecuteTransactionBlock({
     transactionBlock: tx,
     requestType: "WaitForLocalExecution",
     options: {
       showEffects: true,
     },
+    signer: keypair,
   });
 
   return response;
 };
 
-const mint_with_exact_payment = async (address: string, signer: RawSigner) => {
+const mint_with_exact_payment = async (
+  address: string,
+  signer: Ed25519Keypair,
+  client: SuiClient
+) => {
   const exactPaymentInMIST = 100000;
   const tx = new TransactionBlock();
 
   tx.setSender(address);
-
+  // tx.setGasPayment([])
   const fee = tx.splitCoins(tx.gas, [tx.pure(exactPaymentInMIST)]);
   const nft = tx.moveCall({
     target: `${pkgId}::nft::costly_mint`,
-    arguments: [fee]
+    arguments: [fee],
   });
   tx.transferObjects([nft], tx.pure(address));
 
-  const response = signer.signAndExecuteTransactionBlock({
+  const response = client.signAndExecuteTransactionBlock({
     transactionBlock: tx,
     requestType: "WaitForLocalExecution",
     options: {
       showBalanceChanges: true,
-      showEffects: true
-    }
+      showEffects: true,
+    },
+    signer,
   });
   return response;
-}
+};
 
 const mint_and_change = async (
   color: string,
   weight: number,
   address: string,
-  signer: RawSigner
+  signer: Ed25519Keypair,
+  client: SuiClient
 ) => {
   const tx = new TransactionBlock();
 
@@ -96,12 +106,13 @@ const mint_and_change = async (
 
   tx.transferObjects([nft], tx.pure(address));
 
-  const response = await signer.signAndExecuteTransactionBlock({
+  const response = await client.signAndExecuteTransactionBlock({
     transactionBlock: tx,
     requestType: "WaitForLocalExecution",
     options: {
       showEffects: true,
     },
+    signer,
   });
 
   return response;
@@ -113,7 +124,8 @@ const bad_call = async (
   color: string,
   weight: number,
   address: string,
-  signer: RawSigner
+  signer: Ed25519Keypair,
+  client: SuiClient
 ) => {
   const tx = new TransactionBlock();
 
@@ -126,14 +138,15 @@ const bad_call = async (
   });
 
   // no nft to use
-  tx.transferObjects([nft], tx.pure(address));
+  // tx.transferObjects([nft], tx.pure(address));
 
-  const response = await signer.signAndExecuteTransactionBlock({
+  const response = await client.signAndExecuteTransactionBlock({
     transactionBlock: tx,
     requestType: "WaitForLocalExecution",
     options: {
       showEffects: true,
     },
+    signer,
   });
 
   return response;
@@ -143,7 +156,11 @@ const bad_call = async (
 // this might get rate limited on public fullnodes
 // too slow
 // this might result in locked gas coins if coin management is not implemented
-const mass_mint_wrong = async (address: string, signer: RawSigner) => {
+const mass_mint_wrong = async (
+  address: string,
+  signer: Ed25519Keypair,
+  client: SuiClient
+) => {
   // mint 100 gray NFT
   const color = "gray";
   const weight = 11;
@@ -158,15 +175,20 @@ const mass_mint_wrong = async (address: string, signer: RawSigner) => {
       arguments: [tx.pure(color, "string"), tx.pure(weight, "u32")],
     });
     tx.transferObjects([nft], tx.pure(address));
-    await signer.signAndExecuteTransactionBlock({
+    await client.signAndExecuteTransactionBlock({
       transactionBlock: tx,
       requestType: "WaitForEffectsCert",
+      signer,
     });
   }
 };
 
 // correct pattern: batch mints into the same PTB
-const mass_mint_correct = async (address: string, signer: RawSigner) => {
+const mass_mint_correct = async (
+  address: string,
+  keypair: Ed25519Keypair,
+  client: SuiClient
+) => {
   // mint 100 gray NFT
   const color = "gray";
   const weight = 11;
@@ -193,32 +215,77 @@ const mass_mint_correct = async (address: string, signer: RawSigner) => {
     });
     tx.transferObjects([nft], tx.pure(address));
   }
-  const response = await signer.signAndExecuteTransactionBlock({
+  const response = await client.signAndExecuteTransactionBlock({
     transactionBlock: tx,
-    requestType: "WaitForLocalExecution"
+    requestType: "WaitForLocalExecution",
+    options: {
+      showBalanceChanges: true,
+    },
+    signer: keypair,
   });
   return response;
 };
 
+const mintSponsored = async (
+  sender: string,
+  sponsor: string,
+  senderKeypair: Ed25519Keypair,
+  sponsorKeypair: Ed25519Keypair,
+  client: SuiClient
+) => {
+  const tx = new TransactionBlock();
+
+  const nft = tx.moveCall({
+    target: `${pkgId}::nft::mint`,
+    arguments: [tx.pure("red", "string"), tx.pure(65, "u32")],
+    typeArguments: [],
+  });
+
+  tx.transferObjects([nft], tx.pure(sender));
+
+  tx.setSender(sender);
+  tx.setGasOwner(sponsor);
+
+  const txBytes = await tx.build({ client });
+  const { signature: senderSignature, bytes: _b1 } =
+    await senderKeypair.signTransactionBlock(txBytes);
+  const { signature: sponsorSignature, bytes: _b2 } =
+    await sponsorKeypair.signTransactionBlock(txBytes);
+
+  const response = await client.executeTransactionBlock({
+    transactionBlock: txBytes,
+    signature: [senderSignature, sponsorSignature],
+    options: {
+      showEffects: true,
+    },
+    requestType: "WaitForLocalExecution",
+  });
+
+  return response;
+};
+
 const main = async () => {
-  const { address, provider, signer } = getExecStuff();
+  const { address, keypair, client } = getClient();
   let result;
   //call mint
   const color = "fuchsia";
   const weight = 28;
-  result = await mint(color, weight, address, signer);
+  // result = await mint(color, weight, address, keypair, client);
 
   //call mint_and_change
-  //   result = await mint_and_change(color, weight, address, signer);
+  // result = await mint_and_change(color, weight, address, keypair, client);
 
   // mint with payment
-  // result = await mint_with_exact_payment(address, signer);
+  // result = await mint_with_exact_payment(address, keypair, client);
 
   // call bad example
-    // result = await bad_call(color, weight, address, signer);
+  // result = await bad_call(color, weight, address, keypair, client);
 
   // call mass mint
-  // result = await mass_mint_correct(address, signer);
+  // result = await mass_mint_correct(address, keypair, client);
+
+  const {keypair: sponsorKeypair, address: sponsorAddress} = getSponsorData();
+  result = await mintSponsored(address, sponsorAddress, keypair, sponsorKeypair, client);
   console.log(JSON.stringify(result));
 };
 

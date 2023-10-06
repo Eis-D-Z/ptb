@@ -1,28 +1,36 @@
-import {
-  Ed25519Keypair,
-  JsonRpcProvider,
-  devnetConnection,
-  TransactionBlock,
-  fromB64,
-  RawSigner,
-} from "@mysten/sui.js";
+import { TransactionBlock } from "@mysten/sui.js/transactions";
+import { Ed25519Keypair } from "@mysten/sui.js/keypairs/ed25519";
+import { fromB64 } from "@mysten/sui.js/utils";
+import { SuiClient } from "@mysten/sui.js/client";
+import { testnetConnection } from "@mysten/sui.js/dist/cjs/rpc/connection";
 import * as dotenv from "dotenv";
 dotenv.config();
 
-
-const getExecStuff = () => {
+const getClient = () => {
   const b64PrivateKey = process.env.PK_B64 as string;
   const privkey: number[] = Array.from(fromB64(b64PrivateKey));
-  privkey.shift(); // this will be needed to form a signature
+  privkey.shift();
   const privateKey = Uint8Array.from(privkey);
   const keypair = Ed25519Keypair.fromSecretKey(privateKey);
 
   const address = `${keypair.getPublicKey().toSuiAddress()}`;
-  const provider = new JsonRpcProvider(devnetConnection);
-  const signer = new RawSigner(keypair, provider);
+  const client = new SuiClient({
+    url: "https://fullnode.testnet.sui.io:443",
+  });
 
+  return { address, keypair, client };
+};
 
-  return { address, provider, signer };
-}
+const getSponsorData = () => {
+  const b64PrivateKey = process.env.SPONSOR_PK_B64 as string;
+  const privkey: number[] = Array.from(fromB64(b64PrivateKey));
+  privkey.shift();
+  const privateKey = Uint8Array.from(privkey);
+  const keypair = Ed25519Keypair.fromSecretKey(privateKey);
 
-export default getExecStuff;
+  const address = `${keypair.getPublicKey().toSuiAddress()}`;
+
+  return { address, keypair };
+};
+
+export { getClient, getSponsorData };

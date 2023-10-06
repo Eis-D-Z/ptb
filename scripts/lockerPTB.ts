@@ -1,12 +1,19 @@
-import { TransactionBlock, RawSigner } from "@mysten/sui.js";
-import getExecStuff from "./utils";
+import { TransactionBlock } from "@mysten/sui.js/transactions";
+import { getClient } from "./utils";
 import * as dotenv from "dotenv";
+import { Ed25519Keypair } from "@mysten/sui.js/dist/cjs/keypairs/ed25519";
+import { SuiClient } from "@mysten/sui.js/dist/cjs/client";
 dotenv.config();
 
 const pkgId = process.env.NFT_PKG as string;
 const lockerId = process.env.LOCKER_ID as string;
 
-const lock = async (itemId: string, address: string, signer: RawSigner) => {
+const lock = async (
+  itemId: string,
+  address: string,
+  signer: Ed25519Keypair,
+  client: SuiClient
+) => {
   const tx = new TransactionBlock();
 
   tx.moveCall({
@@ -17,15 +24,21 @@ const lock = async (itemId: string, address: string, signer: RawSigner) => {
 
   tx.setSender(address);
 
-  const response = signer.signAndExecuteTransactionBlock({
+  const response = client.signAndExecuteTransactionBlock({
     transactionBlock: tx,
     requestType: "WaitForEffectsCert",
+    signer,
   });
 
   return response;
 };
 
-const change = async (nftId: string, address: string, signer: RawSigner) => {
+const change = async (
+  nftId: string,
+  address: string,
+  signer: Ed25519Keypair,
+  client: SuiClient
+) => {
   const tx = new TransactionBlock();
 
   tx.setSender(address);
@@ -62,12 +75,13 @@ const change = async (nftId: string, address: string, signer: RawSigner) => {
     typeArguments: [`${pkgId}::nft::NFT`],
   });
 
-  const response = await signer.signAndExecuteTransactionBlock({
+  const response = await client.signAndExecuteTransactionBlock({
     transactionBlock: tx,
     requestType: "WaitForLocalExecution",
     options: {
       showEffects: true,
     },
+    signer,
   });
 
   return response;
@@ -79,7 +93,8 @@ const change = async (nftId: string, address: string, signer: RawSigner) => {
 const fail_to_take = async (
   nftId: string,
   address: string,
-  signer: RawSigner
+  signer: Ed25519Keypair,
+  client: SuiClient
 ) => {
   const tx = new TransactionBlock();
 
@@ -94,12 +109,13 @@ const fail_to_take = async (
   });
 
   tx.transferObjects([NestedResult[0]], tx.pure(address));
-  const response = await signer.signAndExecuteTransactionBlock({
+  const response = await client.signAndExecuteTransactionBlock({
     transactionBlock: tx,
     requestType: "WaitForLocalExecution",
     options: {
       showEffects: true,
     },
+    signer,
   });
 
   return response;
@@ -110,7 +126,8 @@ const fail_to_take = async (
 const test_reference_borrow = async (
   itemId: string,
   address: string,
-  signer: RawSigner
+  signer: Ed25519Keypair,
+  client: SuiClient
 ) => {
   const tx = new TransactionBlock();
 
@@ -126,36 +143,34 @@ const test_reference_borrow = async (
     arguments: [reference, tx.pure("scalet", "string")],
   });
 
-  const response = await signer.signAndExecuteTransactionBlock({
+  const response = await client.signAndExecuteTransactionBlock({
     transactionBlock: tx,
     requestType: "WaitForLocalExecution",
     options: {
       showEffects: true,
     },
+    signer,
   });
   return response;
 };
 
 const main = async () => {
-  const { address, provider, signer } = getExecStuff();
+  const { address, keypair, client } = getClient();
   let result;
 
   // lock
   // change
   const itemId =
-    "0x9023f13a3d4d0edb90dbb14da1edca570306868b8bad8d0000e08772908d4923";
+    "0x006cf664e545f2a0f429529df4e1e9806c72b99c9d2eef22d63fc636732e40ef";
   // result = await lock(itemId, address, signer);
-  // result = await change(itemId, address, signer);
-  // result = await fail_to_take(itemId, address, signer);
-
-  //call mint_and_change
-  //   result = await mint_and_change(color, weight, address, signer);
+  result = await change(itemId, address, keypair, client);
+  // result = await fail_to_take(itemId, address, keypair, client);
 
   // call bad example
-  //   result = await bad_call(color, weight, address, signer);
+  //   result = await bad_call(color, weight, address, keypair, client);
 
   // reference anti-pattern
-  result = await test_reference_borrow(itemId, address, signer);
+  // result = await test_reference_borrow(itemId, address, keypair, client);
   console.log(JSON.stringify(result));
 };
 
